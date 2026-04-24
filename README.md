@@ -22,6 +22,18 @@ cd linux-on-imac-fan-control
 chmod +x imac_fan_gui.py
 ```
 
+## One-command installer (`install.sh`)
+
+```bash
+sudo ./install.sh
+```
+
+What it does:
+- installs `python3`, `python3-tk`, and `lm-sensors`
+- installs the app into `/opt/imac-fan-studio`
+- creates `/usr/local/bin/imac-fan-studio`
+- creates a desktop launcher entry (`/usr/share/applications/imac-fan-studio.desktop`)
+
 ## Debian / ParrotOS dependencies
 
 ```bash
