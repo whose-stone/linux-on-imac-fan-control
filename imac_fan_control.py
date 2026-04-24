@@ -12,6 +12,7 @@ Requires root to write fan_min / fan_manual / fan_output.
 
 import glob
 import os
+import shutil
 import sys
 import time
 import threading
@@ -63,11 +64,12 @@ def write_file(path, value):
         return True, None
     except PermissionError:
         for helper in ("pkexec", "sudo"):
-            if not _which(helper):
+            helper_path = shutil.which(helper)
+            if not helper_path:
                 continue
             try:
                 subprocess.run(
-                    [helper, "tee", path],
+                    [helper_path, "tee", path],
                     input=f"{value}\n".encode(),
                     check=True,
                     stdout=subprocess.DEVNULL,
@@ -79,13 +81,6 @@ def write_file(path, value):
         return False, "Permission denied (run as root or install pkexec/sudo)"
     except OSError as e:
         return False, str(e)
-
-
-def _which(cmd):
-    for d in os.environ.get("PATH", "").split(os.pathsep):
-        if os.path.isfile(os.path.join(d, cmd)) and os.access(os.path.join(d, cmd), os.X_OK):
-            return os.path.join(d, cmd)
-    return None
 
 
 def friendly_fan_name(raw_label, idx):
