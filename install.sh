@@ -28,7 +28,17 @@ uninstall() {
     require_root
     echo "Removing iMac Fan Control..."
     rm -f "$BIN_PATH" "$DESKTOP_PATH" "$POLKIT_PATH" "$ICON_PATH"
+    rm -f /usr/share/pixmaps/imac-fan-control.svg
+    for sz in 16 22 24 32 48 64 128 256; do
+        rm -f "/usr/share/icons/hicolor/${sz}x${sz}/apps/imac-fan-control.png"
+    done
     rm -rf "$SHARE_DIR"
+    if command -v update-desktop-database >/dev/null; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null; then
+        gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+    fi
     echo "Done."
 }
 
@@ -37,7 +47,7 @@ install_packages() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
     apt-get install -y --no-install-recommends \
-        python3 policykit-1 lm-sensors
+        python3 policykit-1 lm-sensors librsvg2-bin desktop-file-utils
 
     # Tk package name varies by distro / Python version.  Try the generic
     # name first, then fall back to the versioned one (e.g. python3.11-tk).
@@ -82,8 +92,24 @@ exec python3 $SHARE_DIR/imac_fan_control.py "\$@"
 EOF
     chmod 0755 "$BIN_PATH"
 
+    # Icon: install to the hicolor scalable dir AND to /usr/share/pixmaps
+    # (fallback location some DEs still scan).
     if [[ -f "$SRC_DIR/imac-fan-control.svg" ]]; then
         install -m 0644 "$SRC_DIR/imac-fan-control.svg" "$ICON_PATH"
+        install -d /usr/share/pixmaps
+        install -m 0644 "$SRC_DIR/imac-fan-control.svg" \
+            /usr/share/pixmaps/imac-fan-control.svg
+
+        # Also render PNGs at common sizes if rsvg-convert is available.
+        if command -v rsvg-convert >/dev/null; then
+            for sz in 16 22 24 32 48 64 128 256; do
+                d="/usr/share/icons/hicolor/${sz}x${sz}/apps"
+                install -d "$d"
+                rsvg-convert -w "$sz" -h "$sz" \
+                    "$SRC_DIR/imac-fan-control.svg" \
+                    -o "$d/imac-fan-control.png" 2>/dev/null || true
+            done
+        fi
     fi
 
     if [[ -f "$SRC_DIR/imac-fan-control.desktop" ]]; then
@@ -97,10 +123,17 @@ EOF
 
 post_install() {
     if command -v update-desktop-database >/dev/null; then
-        update-desktop-database -q || true
+        update-desktop-database -q /usr/share/applications || true
     fi
     if command -v gtk-update-icon-cache >/dev/null; then
         gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+    fi
+    if command -v xdg-desktop-menu >/dev/null; then
+        xdg-desktop-menu forceupdate --mode system 2>/dev/null || true
+    fi
+    # MATE / Cinnamon occasionally cache the menu per-user; nudge it.
+    if command -v mate-panel >/dev/null; then
+        pkill -HUP mate-panel 2>/dev/null || true
     fi
 }
 
