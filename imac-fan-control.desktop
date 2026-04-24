@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=iMac Fan Control
+GenericName=Fan Controller
+Comment=Retro 90s-style fan and temperature controller for the 2011 iMac
+Exec=pkexec imac-fan-control
+Icon=imac-fan-control
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=fan;temperature;applesmc;imac;cooling;
+StartupNotify=true

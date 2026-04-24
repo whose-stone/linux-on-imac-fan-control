@@ -1,190 +1,125 @@
+# iMac Fan Control (Linux)
 
-# 🌀 NBFC Fan Controller GUI for Linux
+A retro 90s-styled GUI for controlling the fans of a **2011 iMac**
+(iMac12,1 21.5" / iMac12,2 27") running a Debian-based Linux distribution
+such as **ParrotOS**, Kali, Debian, Ubuntu, or Mint.
 
-A Python-based GUI app to control your laptop’s fans using [NBFC (NoteBook FanControl)](https://github.com/hirschmann/nbfc) on Linux.  
-Includes **manual fan control**, **auto mode based on CPU temperature**, **system monitoring**, and **tray icon support**.
+The app talks directly to the `applesmc` kernel module - no extra daemon
+is needed. It auto-detects every fan and temperature sensor exposed by SMC,
+gives each fan its own slider, and shows a live wall of LCD-style readouts.
 
----
+## Features
 
-## ✅ Compatibility
+- **Auto-detects fans** from `/sys/devices/platform/applesmc.768/fan*_*`.
+  On a 27" iMac12,2 you typically get three sliders: **CPU**, **HDD**, **ODD**.
+- **One slider per fan**, labelled with the firmware-supplied name and
+  bounded by the firmware-supplied min/max RPM range.
+- **Live temperatures** for every SMC sensor (CPU, GPU, ambient, memory,
+  hard drive, optical drive, heatsink, etc).
+- **Light and dark themes** - both styled like a Win95/Mac OS 7-era control
+  panel, with chunky bevels, raised buttons, and green-LCD readouts.
+- **Safe by default**: writes to `fan*_min` so the firmware retains
+  emergency thermal control. An "Auto" button per fan and a master
+  "Reset All to Auto" button restore the firmware default minimum.
+- **No background service**: the app only does anything while it's open.
 
-**Tested On:**
-- **Laptop:** HP Victus 15 (by author)
-- Will work on other laptops too (by author)
-- **OS:** Linux Mint 22.1 x86_64
+## Compatibility
 
----
+- **Hardware:** any Mac with `applesmc` working under Linux. Designed and
+  tested for the 2011 iMac, but works on Mac minis, MacBooks, etc.
+- **OS:** ParrotOS / Kali / Debian 11+ / Ubuntu 22.04+ / Linux Mint 21+.
+  Anything with Python 3.9+ and Tk should work.
 
-## 🚀 Features
-
-- 🧊 **Fan Control Modes**:
-  - Silent (25%)
-  - Balanced (50%)
-  - Performance (75%)
-  - Turbo (100%)
-  - Auto (dynamic based on CPU temp)
-
-- 📈 **System Monitoring**:
-  - CPU temperature and usage
-  - GPU temperature (NVIDIA/AMD)
-  - RAM usage
-
-- 🧲 **System Tray Support**:
-  - Minimize to tray (purple dot icon)
-  - Restore GUI or exit app via tray
-
-- ⚙️ **NBFC Auto Setup**:
-  - Installs and builds NBFC
-  - Prompts user to select profile
-
-- 💻 **User-Friendly GUI**:
-  - Dark-themed Tkinter interface
-  - Status bar with real-time info
-
----
-
-## 🛠️ Setup Options
-
-### 🔹 Option 1: Automatic Setup (Recommended)
-
-1. **Run the app with sudo**:
-   ```bash
-   sudo python3 nbfc_fan_controller.py
-   ```
-
-2. On first run:
-   - Installs NBFC if not found
-   - Builds and configures it
-   - Prompts to select compatible NBFC profile
-
-> ✅ This is the easiest and fastest way to get started.
-
----
-
-### 🔸 Option 2: Manual Setup
-
-#### 1. Install System Dependencies:
+## Install from GitHub
 
 ```bash
-sudo apt update
-sudo apt install -y python3 python3-pip git build-essential mono-complete lm-sensors
+git clone https://github.com/whose-stone/linux-on-imac-fan-control.git
+cd linux-on-imac-fan-control
+sudo ./install.sh
 ```
 
-#### 2. Install Python Dependencies:
+The installer:
+
+1. Installs `python3`, `python3-tk`, `policykit-1`, and `lm-sensors` via
+   `apt`.
+2. Loads the `applesmc` kernel module and adds it to
+   `/etc/modules-load.d/applesmc.conf` so it loads at boot.
+3. Copies the app to `/usr/local/share/imac-fan-control/` and a launcher
+   to `/usr/local/bin/imac-fan-control`.
+4. Installs a `.desktop` entry and a polkit policy so you can launch it
+   from your menu and authenticate via the standard graphical prompt.
+
+To uninstall:
 
 ```bash
-pip3 install psutil pystray pillow
+sudo ./install.sh --uninstall
 ```
 
-#### 3. Clone and Build NBFC:
+## Run
+
+From a terminal, with privileges to write applesmc:
 
 ```bash
-git clone https://github.com/nbfc-linux/nbfc-linux.git /tmp/nbfc-linux
-cd /tmp/nbfc-linux
-make
-sudo make install
+sudo imac-fan-control
+# or
+pkexec imac-fan-control
 ```
 
-> *(Optional)* Install config probe tool:  
-> `sudo apt install nbfc-linux-probe`
+Or just click **iMac Fan Control** in your application menu (Utilities).
 
-#### 4. Configure NBFC:
+You can also run the script in place without installing:
 
 ```bash
-nbfc config -l                     # List available configs
-sudo nbfc config -s "Your Laptop" # Replace with your model
-sudo systemctl restart nbfc_service
-sudo nbfc start
+sudo python3 imac_fan_control.py
 ```
 
-#### 5. Run the App:
+If you launch it without root the GUI still works - you'll see live RPM
+and temperature readouts - but the fan sliders won't be able to write.
+The status bar will tell you when that's the case.
 
-```bash
-sudo python3 all_fan.py
-```
+## How it controls fans
 
-> Run `Victus_fans.py` only **after** `all_fans.py` if you use both scripts.
+Each slider writes to `fan<N>_min`, the *minimum RPM the firmware is
+allowed to drop the fan to*. The SMC keeps doing its own thermal
+management on top - it can always spin the fan **faster** than you've
+asked, it just won't spin it slower. This is the same approach used by
+`mbpfan` and `macfanctld`, and it's the safest way to nudge the fans up
+without taking responsibility for cooking the machine.
 
----
+If you want the fan to drop back to its firmware-defined silent minimum,
+press **Auto** next to that fan, or **Reset All to Auto** in the toolbar.
 
-## 📖 Usage Guide
+## Theming
 
-- **Fan Control**: Select a fan mode or use **Auto** (dynamic adjustment).
-- **Minimize**: Close window to tray.
-- **Tray Menu**: Right-click tray icon to restore or exit.
+Click **Switch to Dark** / **Switch to Light** in the toolbar. The dark
+theme uses a CRT-green LCD readout on a dark grey chassis; the light
+theme is classic Win95 silver with a navy title bar.
 
-#### 🔄 Auto Fan Logic:
+## Troubleshooting
 
-| CPU Temp      | Mode        |
-|---------------|-------------|
-| < 45°C        | Silent      |
-| 45–59°C       | Balanced    |
-| 60–74°C       | Performance |
-| ≥ 75°C        | Turbo       |
+- **"applesmc not found"**: load the module with
+  `sudo modprobe applesmc` and check `dmesg | grep applesmc`. Some Macs
+  need the SMC kernel module from a recent kernel.
+- **Sliders snap back**: the firmware enforces hardware-defined limits.
+  You cannot set a min RPM above `fan*_max` or below `fan*_min`.
+- **Fan ramps to 6000 after disk swap**: the famous post-2011 iMac HDD
+  fan issue happens when the original disk's thermal sensor goes missing.
+  This tool can mask it (set `HDD` slider to a comfortable RPM), but the
+  proper fix is `smcFanControl`-style HDD temperature spoofing.
+- **Permission errors**: relaunch with `pkexec imac-fan-control` or
+  `sudo`.
 
----
+## Files
 
-## 🧪 Troubleshooting
+| File                            | Purpose                                  |
+|---------------------------------|------------------------------------------|
+| `imac_fan_control.py`           | The GUI application                      |
+| `install.sh`                    | Installer / uninstaller                  |
+| `imac-fan-control.desktop`      | Application-menu entry                   |
+| `org.imacfan.policy`            | Polkit policy for graphical sudo         |
+| `imac-fan-control.svg`          | Application icon                         |
+| `all_fan.py`, `Victus_Fan.py`   | Older NBFC-based laptop fan controllers  |
 
-- **Fan not responding**:
-  - Check NBFC status: `journalctl -u nbfc_service`
-  - Ensure proper config selected: `nbfc config -l`
+## License
 
-- **No temperature shown**:
-  - Run: `sensors`
-  - Verify `coretemp` or `amdgpu` is in `/sys/class/hwmon/`
-
-- **No sudo**: App runs in monitoring-only mode without root.
-
----
-
-## 🔁 Run on Startup (Optional)
-
-1. Create systemd service:
-
-```bash
-mkdir -p ~/.config/systemd/user
-nano ~/.config/systemd/user/nbfc-fan-controller.service
-```
-
-2. Paste:
-
-```ini
-[Unit]
-Description=NBFC Fan Controller GUI
-After=graphical-session.target
-
-[Service]
-ExecStart=/usr/bin/sudo /usr/bin/python3 /path/to/nbfc_fan_controller.py
-Restart=always
-
-[Install]
-WantedBy=graphical-session.target
-```
-
-3. Enable the service:
-
-```bash
-systemctl --user enable nbfc-fan-controller.service
-systemctl --user start nbfc-fan-controller.service
-```
-
----
-
-## 🧾 License
-
-MIT License – use freely, attribution appreciated.
-
----
-
-## 🙌 Acknowledgments
-
-- [NBFC-Linux](https://github.com/nbfc-linux/nbfc-linux)
-- [`psutil`](https://pypi.org/project/psutil/)
-- [`pystray`](https://pypi.org/project/pystray/)
-- [`Pillow`](https://pypi.org/project/Pillow/)
-- Linux open-source community
-
----
-
-📬 *Found bugs? Have ideas? Open an issue or contribute!*
+MIT.
