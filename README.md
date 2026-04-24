@@ -14,23 +14,18 @@ Many iMac fan scripts are fixed to specific fan IDs. This app scans hardware sen
 
 ---
 
-## Install from GitHub
+## Install from GitHub (easy mode)
 
 ```bash
 git clone https://github.com/<your-user>/linux-on-imac-fan-control.git
 cd linux-on-imac-fan-control
-chmod +x imac_fan_gui.py
-```
-
-## One-command installer (`install.sh`)
-
-```bash
 sudo ./install.sh
 ```
 
-What it does:
-- installs `python3`, `python3-tk`, and `lm-sensors`
-- installs the app into `/opt/imac-fan-studio`
+What `install.sh` does:
+- installs `python3`, `python3-tk`, `lm-sensors`, and `policykit-1`
+- auto-detects the available GUI script in this branch (`imac_fan_gui.py`, `all_fan.py`, or `Victus_Fan.py`)
+- installs app files into `/opt/imac-fan-studio`
 - creates `/usr/local/bin/imac-fan-studio`
 - creates a desktop launcher entry (`/usr/share/applications/imac-fan-studio.desktop`)
 
@@ -51,13 +46,13 @@ sudo sensors-detect
 
 ## Run
 
-> Fan speed writes generally require root.
+After `install.sh`:
 
 ```bash
-sudo ./imac_fan_gui.py
+imac-fan-studio
 ```
 
-or
+Manual run from repo (if you skipped installer):
 
 ```bash
 sudo python3 imac_fan_gui.py
