@@ -37,7 +37,27 @@ install_packages() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
     apt-get install -y --no-install-recommends \
-        python3 python3-tk policykit-1 lm-sensors
+        python3 policykit-1 lm-sensors
+
+    # Tk package name varies by distro / Python version.  Try the generic
+    # name first, then fall back to the versioned one (e.g. python3.11-tk).
+    if ! apt-get install -y --no-install-recommends python3-tk; then
+        local pyver
+        pyver="$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])')"
+        echo "python3-tk not available, trying python${pyver}-tk..."
+        apt-get install -y --no-install-recommends "python${pyver}-tk" || {
+            echo "ERROR: could not install Tk for Python 3." >&2
+            echo "Check that 'main' (Debian/Parrot) or 'universe' (Ubuntu)" >&2
+            echo "is enabled in /etc/apt/sources.list, then retry." >&2
+            exit 1
+        }
+    fi
+
+    # Verify Tk actually imports.
+    if ! python3 -c 'import tkinter' 2>/dev/null; then
+        echo "ERROR: Tk is installed but 'import tkinter' still fails." >&2
+        exit 1
+    fi
 }
 
 ensure_applesmc() {
