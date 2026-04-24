@@ -32,6 +32,11 @@ uninstall() {
     for sz in 16 22 24 32 48 64 128 256; do
         rm -f "/usr/share/icons/hicolor/${sz}x${sz}/apps/imac-fan-control.png"
     done
+    # Refuse to recurse if PREFIX got emptied / points at root.
+    if [[ -z "${SHARE_DIR:-}" || "$SHARE_DIR" == "/" || "$SHARE_DIR" != *"/imac-fan-control" ]]; then
+        echo "ERROR: refusing to 'rm -rf' suspicious SHARE_DIR='$SHARE_DIR'" >&2
+        exit 1
+    fi
     rm -rf "$SHARE_DIR"
     if command -v update-desktop-database >/dev/null; then
         update-desktop-database -q /usr/share/applications || true
@@ -88,7 +93,7 @@ install_files() {
 
     cat > "$BIN_PATH" <<EOF
 #!/usr/bin/env bash
-exec python3 $SHARE_DIR/imac_fan_control.py "\$@"
+exec python3 "$SHARE_DIR/imac_fan_control.py" "\$@"
 EOF
     chmod 0755 "$BIN_PATH"
 
