@@ -43,24 +43,11 @@ readouts.
 - **OS:** ParrotOS 6+ / Kali / Debian 11+ / Ubuntu 22.04+ / Linux Mint
   21+. Anything with Python 3.9+ and Tk should work.
 
-## Install from this branch
-
-Until the branch is merged to `main`, clone it directly:
+## Install
 
 ```bash
-git clone -b claude/imac-fan-control-gui-hkCHo \
-    https://github.com/whose-stone/linux-on-imac-fan-control.git
+git clone https://github.com/whose-stone/linux-on-imac-fan-control.git
 cd linux-on-imac-fan-control
-sudo ./install.sh
-```
-
-If you already have the repo cloned:
-
-```bash
-cd linux-on-imac-fan-control
-git fetch origin claude/imac-fan-control-gui-hkCHo
-git checkout claude/imac-fan-control-gui-hkCHo
-git pull origin claude/imac-fan-control-gui-hkCHo
 sudo ./install.sh
 ```
 
@@ -101,11 +88,11 @@ python3 -c 'import tkinter; print("tkinter OK")'
 
 Then re-run `sudo ./install.sh`.
 
-## Update to the latest commit on this branch
+## Update
 
 ```bash
 cd linux-on-imac-fan-control
-git pull origin claude/imac-fan-control-gui-hkCHo
+git pull
 sudo ./install.sh
 ```
 
