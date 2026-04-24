@@ -79,15 +79,21 @@ The status bar will tell you when that's the case.
 
 ## How it controls fans
 
-Each slider writes to `fan<N>_min`, the *minimum RPM the firmware is
-allowed to drop the fan to*. The SMC keeps doing its own thermal
-management on top - it can always spin the fan **faster** than you've
-asked, it just won't spin it slower. This is the same approach used by
-`mbpfan` and `macfanctld`, and it's the safest way to nudge the fans up
-without taking responsibility for cooking the machine.
+**Set Fan Speed** locks the fan at an exact RPM:
 
-If you want the fan to drop back to its firmware-defined silent minimum,
-press **Auto** next to that fan, or **Reset All to Auto** in the toolbar.
+1. Writes `1` to `fan<N>_manual` to take the fan off firmware control.
+2. Writes the slider value to `fan<N>_output` as the hard setpoint.
+
+The fan will spin at that RPM until you press **Release to Auto** on
+that fan (or **Reset All to Auto** in the toolbar), which writes `0` to
+`fan<N>_manual` and hands control back to the SMC.
+
+The mode indicator next to each fan name shows **MANUAL** or **AUTO**
+based on the current state of `fan<N>_manual`.
+
+> :warning: In MANUAL mode the firmware will **not** ramp the fan up on
+> its own if temperatures spike. Keep an eye on the temperature
+> readouts, and release to AUTO if you see sustained high temps.
 
 ## Theming
 

@@ -126,16 +126,86 @@ def discover_fans(smc_path):
 
 
 def discover_temps(smc_path):
-    """Return list of (label, path) for every applesmc temperature."""
+    """Return list of (friendly_label, raw_code, path) for every applesmc temperature."""
     temps = []
     for label_path in sorted(glob.glob(os.path.join(smc_path, "temp*_label"))):
         base = os.path.basename(label_path)
         idx = base[len("temp"):-len("_label")]
-        label = read_file(label_path) or f"temp{idx}"
+        raw = read_file(label_path) or f"temp{idx}"
         input_path = os.path.join(smc_path, f"temp{idx}_input")
         if os.path.isfile(input_path):
-            temps.append((label, input_path))
+            temps.append((friendly_temp_name(raw), raw, input_path))
     return temps
+
+
+# Human-readable names for applesmc 4-letter SMC temperature codes.
+# Covers the sensors commonly present on 2011 iMacs (iMac12,1/12,2).
+_TEMP_NAME_MAP = {
+    "TA0P": "Ambient Air",
+    "TA1P": "Ambient Air (2)",
+    "TA0S": "PCI Slot",
+    "TC0D": "CPU Die",
+    "TC0E": "CPU (PECI)",
+    "TC0F": "CPU (PECI filtered)",
+    "TC0H": "CPU Heatsink",
+    "TC0P": "CPU Proximity",
+    "TCGC": "CPU GFX Core",
+    "TCXC": "CPU Package",
+    "TG0D": "GPU Die",
+    "TG0H": "GPU Heatsink",
+    "TG0P": "GPU Proximity",
+    "TG1H": "GPU Heatsink (2)",
+    "Th0H": "Main Heatsink 1",
+    "Th1H": "Main Heatsink 2",
+    "Th2H": "Main Heatsink 3",
+    "TH0P": "Hard Drive",
+    "TH1P": "Hard Drive Bay 2",
+    "THSP": "Hard Drive Proximity",
+    "TL0P": "LCD Panel",
+    "TL1P": "LCD Proximity",
+    "TM0P": "Memory Proximity",
+    "TM0S": "Memory Slot",
+    "Tm0P": "Memory Bank",
+    "TN0D": "Northbridge Die",
+    "TN0H": "Northbridge Heatsink",
+    "TN0P": "Northbridge Proximity",
+    "TO0P": "Optical Drive",
+    "TP0P": "Power Supply",
+    "Tp0C": "Power Supply 1",
+    "Tp1C": "Power Supply 2",
+    "TS0D": "PCH Die",
+    "TS0P": "PCH Proximity",
+    "TW0P": "Wireless Proximity",
+    "TB0T": "Battery",
+    "TB1T": "Battery Cell 1",
+    "TB2T": "Battery Cell 2",
+    "TI0P": "Thunderbolt Proximity",
+    "TZ0C": "Thermal Zone 0",
+    "TZ1C": "Thermal Zone 1",
+}
+
+
+def friendly_temp_name(code):
+    """Map a raw SMC code like 'TC0D' to a friendly name; fall back to the code."""
+    if code in _TEMP_NAME_MAP:
+        return _TEMP_NAME_MAP[code]
+    # Heuristic fallback for unknown codes: pick a readable prefix
+    if len(code) == 4 and code[0] in "Tt":
+        zone = code[1]
+        suffix = code[-1]
+        zone_map = {
+            "A": "Ambient", "C": "CPU", "G": "GPU", "H": "Heatsink",
+            "h": "Heatsink", "L": "LCD", "M": "Memory", "m": "Memory",
+            "N": "Northbridge", "O": "Optical", "P": "Power",
+            "p": "Power", "S": "PCH", "W": "Wireless", "B": "Battery",
+            "I": "Thunderbolt", "Z": "Thermal Zone",
+        }
+        suffix_map = {"D": "Die", "H": "Heatsink", "P": "Proximity",
+                      "C": "Core", "S": "Slot", "T": "Temp"}
+        base = zone_map.get(zone, f"Sensor {zone}")
+        tail = suffix_map.get(suffix, "")
+        return f"{base} {tail}".strip() + f" ({code})"
+    return code
 
 
 def read_temp_c(path):
@@ -411,8 +481,8 @@ class FanControlApp:
             lambda e: temps_canvas.configure(scrollregion=temps_canvas.bbox("all")),
         )
 
-        for label, path in self.temps:
-            self._make_temp_row(temps_inner, label, path)
+        for label, raw_code, path in self.temps:
+            self._make_temp_row(temps_inner, label, raw_code, path)
 
         # ---- Status bar
         self.status_var = tk.StringVar(value="Ready.")
@@ -468,18 +538,33 @@ class FanControlApp:
         )
         name_lbl.pack(side="left")
 
+        mode_lbl = tk.Label(
+            header, text="AUTO",
+            bg=self.theme["panel"], fg=self.theme["accent"],
+            font=("Courier", 9, "bold"),
+        )
+        mode_lbl.pack(side="left", padx=(8, 0))
+
         rpm_lbl = LcdLabel(header, self.theme, text="---- RPM", width=10)
         rpm_lbl.pack(side="right")
 
         info = tk.Label(
             row.inner,
-            text=f"Range: {fan['min_rpm']}-{fan['max_rpm']} RPM   (safe min {fan['safe_rpm']})",
+            text=f"Range: {fan['min_rpm']}-{fan['max_rpm']} RPM",
             bg=self.theme["panel"], fg=self.theme["fg"],
             font=("Helvetica", 8), anchor="w",
         )
         info.pack(fill="x", padx=4)
 
-        var = tk.IntVar(value=fan["min_rpm"])
+        # Initial slider value: current fan*_output if the fan is already
+        # in manual mode, otherwise the current measured RPM (falls back to min).
+        manual_now = read_rpm(fan["manual_path"]) == 1
+        initial = read_rpm(fan["output_path"]) if manual_now else read_rpm(fan["input_path"])
+        if initial is None:
+            initial = fan["min_rpm"]
+        initial = max(fan["min_rpm"], min(initial, fan["max_rpm"]))
+
+        var = tk.IntVar(value=initial)
         scale = tk.Scale(
             row.inner, from_=fan["min_rpm"], to=fan["max_rpm"],
             orient="horizontal", variable=var, resolution=50,
@@ -497,12 +582,12 @@ class FanControlApp:
         actions.pack(fill="x", padx=4, pady=(0, 4))
 
         apply_btn = self._make_button(
-            actions, "Apply", lambda f=fan: self._apply_fan(f)
+            actions, "Set Fan Speed", lambda f=fan: self._apply_fan(f)
         )
         apply_btn.pack(side="left", padx=(0, 4))
 
         auto_btn = self._make_button(
-            actions, "Auto (reset min)", lambda f=fan: self._reset_fan(f)
+            actions, "Release to Auto", lambda f=fan: self._reset_fan(f)
         )
         auto_btn.pack(side="left")
 
@@ -510,21 +595,27 @@ class FanControlApp:
         self.slider_widgets[fan["idx"]] = scale
         self.fan_widgets[fan["idx"]] = {
             "row": row, "header": header, "name": name_lbl,
-            "rpm": rpm_lbl, "info": info, "scale": scale,
+            "mode": mode_lbl, "rpm": rpm_lbl, "info": info, "scale": scale,
             "actions": actions, "apply": apply_btn, "auto": auto_btn,
         }
 
-    def _make_temp_row(self, parent, label, path):
+    def _make_temp_row(self, parent, label, raw_code, path):
         row = tk.Frame(parent, bg=self.theme["panel"])
         row.pack(fill="x", padx=4, pady=2)
         name = tk.Label(
             row, text=label, bg=self.theme["panel"], fg=self.theme["fg"],
-            font=("Helvetica", 9), anchor="w", width=14,
+            font=("Helvetica", 9), anchor="w", width=20,
         )
         name.pack(side="left")
+        code = tk.Label(
+            row, text=raw_code, bg=self.theme["panel"], fg=self.theme["panel_dark"],
+            font=("Courier", 8), anchor="w",
+        )
+        code.pack(side="left", padx=(4, 0))
         value = LcdLabel(row, self.theme, text="-- C", width=8)
         value.pack(side="right")
-        self.temp_widgets[path] = {"row": row, "name": name, "value": value}
+        self.temp_widgets[path] = {"row": row, "name": name,
+                                    "code": code, "value": value}
 
     # ------- Theming -------
 
@@ -599,22 +690,21 @@ class FanControlApp:
             self.poll_stop.wait(self.POLL_SECONDS)
 
     def _update_readouts(self):
-        # fan RPMs
+        # fan RPMs / manual mode indicator
         for fan in self.fans:
             rpm = read_rpm(fan["input_path"])
-            cur_min = read_rpm(fan["min_path"])
+            manual = read_rpm(fan["manual_path"])
             widgets = self.fan_widgets.get(fan["idx"])
             if not widgets:
                 continue
             text = f"{rpm} RPM" if rpm is not None else "--- RPM"
             warn = rpm is not None and rpm >= int(fan["max_rpm"] * 0.95)
             self.root.after(0, widgets["rpm"].set_value, text, warn)
-            if cur_min is not None:
-                # Only sync slider if user isn't dragging it right now
-                self.root.after(0, self._sync_slider, fan["idx"], cur_min)
+            mode_txt = "MANUAL" if manual == 1 else "AUTO"
+            self.root.after(0, lambda w=widgets, t=mode_txt: w["mode"].config(text=t))
 
         # temperatures
-        for label, path in self.temps:
+        for label, raw_code, path in self.temps:
             t = read_temp_c(path)
             widgets = self.temp_widgets.get(path)
             if not widgets:
@@ -625,19 +715,6 @@ class FanControlApp:
                 warn = t >= 80
                 self.root.after(0, widgets["value"].set_value, f"{t:5.1f} C", warn)
 
-    def _sync_slider(self, idx, value):
-        var = self.slider_vars.get(idx)
-        if var is None:
-            return
-        if int(var.get()) == int(value):
-            return
-        # Suppress the slider's own command callback during programmatic update
-        self.suppress_command.add(idx)
-        try:
-            var.set(int(value))
-        finally:
-            self.suppress_command.discard(idx)
-
     def _refresh_now(self):
         threading.Thread(target=self._update_readouts, daemon=True).start()
         self.status_var.set("Refreshed.")
@@ -645,46 +722,58 @@ class FanControlApp:
     # ------- Fan actions -------
 
     def _on_slider(self, fan, value):
-        if fan["idx"] in self.suppress_command:
-            return
+        # User is dragging the slider - just remember the target.  Nothing else
+        # fights this value now, so the slider stays exactly where the user put it.
         self.user_min[fan["idx"]] = int(float(value))
 
     def _apply_fan(self, fan):
+        """Force the fan to an exact RPM using applesmc manual mode."""
         var = self.slider_vars[fan["idx"]]
         target = int(var.get())
         target = max(fan["min_rpm"], min(target, fan["max_rpm"]))
-        ok, err = write_file(fan["min_path"], target)
-        if ok:
-            self.status_var.set(
-                f"{fan['label']}: minimum set to {target} RPM "
-                f"(applesmc will keep it >= this value)."
+
+        # Enable manual mode, then write the exact RPM to fan*_output.
+        ok1, err1 = write_file(fan["manual_path"], 1)
+        if not ok1:
+            self.status_var.set(f"Failed to enable manual mode: {err1}")
+            messagebox.showerror(
+                APP_NAME,
+                f"Could not write to:\n{fan['manual_path']}\n\n{err1}",
             )
-        else:
-            self.status_var.set(f"Failed to set {fan['label']}: {err}")
-            messagebox.showerror(APP_NAME, f"Could not write to:\n{fan['min_path']}\n\n{err}")
+            return
+        ok2, err2 = write_file(fan["output_path"], target)
+        if not ok2:
+            self.status_var.set(f"Failed to set {fan['label']}: {err2}")
+            messagebox.showerror(
+                APP_NAME,
+                f"Could not write to:\n{fan['output_path']}\n\n{err2}",
+            )
+            return
+        self.status_var.set(
+            f"{fan['label']}: locked at {target} RPM (MANUAL mode)."
+        )
 
     def _reset_fan(self, fan):
-        # Restore the firmware-defined safe minimum.
-        ok, err = write_file(fan["min_path"], fan["safe_rpm"])
+        """Hand control back to the SMC (firmware auto-cooling)."""
+        ok, err = write_file(fan["manual_path"], 0)
         if ok:
-            self.slider_vars[fan["idx"]].set(fan["safe_rpm"])
-            self.status_var.set(f"{fan['label']}: reset to firmware minimum {fan['safe_rpm']} RPM.")
+            self.status_var.set(
+                f"{fan['label']}: released to AUTO (firmware-controlled)."
+            )
         else:
             self.status_var.set(f"Reset failed: {err}")
 
     def _reset_all(self):
         failures = []
         for fan in self.fans:
-            ok, err = write_file(fan["min_path"], fan["safe_rpm"])
-            if ok:
-                self.slider_vars[fan["idx"]].set(fan["safe_rpm"])
-            else:
+            ok, err = write_file(fan["manual_path"], 0)
+            if not ok:
                 failures.append(f"{fan['label']}: {err}")
         if failures:
             self.status_var.set("Reset finished with errors (see dialog).")
             messagebox.showwarning(APP_NAME, "Some fans could not be reset:\n\n" + "\n".join(failures))
         else:
-            self.status_var.set("All fans reset to firmware minimum (auto control).")
+            self.status_var.set("All fans released to AUTO (firmware control).")
 
     # ------- Misc -------
 
@@ -693,8 +782,9 @@ class FanControlApp:
             APP_NAME,
             f"{APP_NAME} v{APP_VERSION}\n\n"
             "Retro fan controller for the 2011 iMac running Linux.\n"
-            "Reads applesmc sysfs to detect fans and temperatures, and writes\n"
-            "fan*_min to raise the minimum RPM the firmware will allow.\n\n"
+            "Reads applesmc sysfs to detect fans and temperatures.\n"
+            "'Set Fan Speed' locks the fan at an exact RPM via fan*_manual\n"
+            "+ fan*_output.  'Release to Auto' hands control back to the SMC.\n\n"
             "(c) MIT License.",
         )
 
