@@ -88,6 +88,20 @@ def _which(cmd):
     return None
 
 
+def friendly_fan_name(raw_label, idx):
+    """Return a human label for a fan given its applesmc label and index.
+    E.g. ('CPU', '3') -> 'CPU Fan'.  The raw SMC identifier is kept
+    separately so the UI can render it as 'CPU Fan (fan3)'.
+    """
+    label = (raw_label or "").strip()
+    if not label:
+        return f"Fan {idx}"
+    # Avoid a double 'Fan' suffix if the firmware already included one.
+    if label.lower().endswith("fan"):
+        return label
+    return f"{label} Fan"
+
+
 def discover_fans(smc_path):
     """Return list of fan dicts: {idx, label, min, max, input_path, min_path, manual_path}."""
     fans = []
@@ -98,7 +112,8 @@ def discover_fans(smc_path):
             int(idx)
         except ValueError:
             continue
-        label = read_file(os.path.join(smc_path, f"fan{idx}_label")) or f"Fan {idx}"
+        raw_label = read_file(os.path.join(smc_path, f"fan{idx}_label")) or ""
+        label = friendly_fan_name(raw_label, idx)
         try:
             fan_min = int(read_file(os.path.join(smc_path, f"fan{idx}_min"), "0"))
         except ValueError:
@@ -114,6 +129,7 @@ def discover_fans(smc_path):
         fans.append({
             "idx": idx,
             "label": label,
+            "code": f"fan{idx}",
             "min_rpm": fan_min,
             "max_rpm": fan_max,
             "safe_rpm": fan_safe,
@@ -126,55 +142,111 @@ def discover_fans(smc_path):
 
 
 def discover_temps(smc_path):
-    """Return list of (friendly_label, raw_code, path) for every applesmc temperature."""
+    """Return list of (friendly_label, raw_code, path) for every applesmc
+    temperature sensor that currently reports a physically plausible value.
+
+    applesmc exposes every SMC key the firmware publishes, including ones that
+    aren't actually wired on a given board (ghost sensors).  Those typically
+    read back as large negatives like -126/-128 C.  Filter them out at
+    discovery time so the UI only shows real sensors.
+    """
     temps = []
     for label_path in sorted(glob.glob(os.path.join(smc_path, "temp*_label"))):
         base = os.path.basename(label_path)
         idx = base[len("temp"):-len("_label")]
         raw = read_file(label_path) or f"temp{idx}"
         input_path = os.path.join(smc_path, f"temp{idx}_input")
-        if os.path.isfile(input_path):
-            temps.append((friendly_temp_name(raw), raw, input_path))
+        if not os.path.isfile(input_path):
+            continue
+        reading = read_temp_c(input_path)
+        if not is_plausible_temp(reading):
+            continue
+        temps.append((friendly_temp_name(raw), raw, input_path))
     return temps
+
+
+# A real thermistor on a running iMac should always be within this range.
+# Anything outside it is either a ghost sensor or a transient error.
+TEMP_MIN_C = 0.0
+TEMP_MAX_C = 130.0
+
+
+def is_plausible_temp(c):
+    return c is not None and TEMP_MIN_C <= c <= TEMP_MAX_C
 
 
 # Human-readable names for applesmc 4-letter SMC temperature codes.
 # Covers the sensors commonly present on 2011 iMacs (iMac12,1/12,2).
 _TEMP_NAME_MAP = {
+    # Ambient / board
     "TA0P": "Ambient Air",
-    "TA1P": "Ambient Air (2)",
+    "TA1P": "Ambient Air 2",
+    "TA0V": "Ambient Air (filtered)",
     "TA0S": "PCI Slot",
+    # CPU
     "TC0D": "CPU Die",
     "TC0E": "CPU (PECI)",
     "TC0F": "CPU (PECI filtered)",
     "TC0H": "CPU Heatsink",
     "TC0P": "CPU Proximity",
+    "TC1C": "CPU Core 1",
+    "TC2C": "CPU Core 2",
+    "TC3C": "CPU Core 3",
+    "TC4C": "CPU Core 4",
+    "TC0c": "CPU Core 0",
+    "TC1c": "CPU Core 1",
+    "TC2c": "CPU Core 2",
+    "TC3c": "CPU Core 3",
+    "TC4c": "CPU Core 4",
     "TCGC": "CPU GFX Core",
+    "TCGc": "CPU GFX Core",
+    "TCSC": "CPU System Agent",
+    "TCSc": "CPU System Agent",
     "TCXC": "CPU Package",
+    "TCXc": "CPU Package",
+    # GPU
     "TG0D": "GPU Die",
+    "TG0d": "GPU Die",
     "TG0H": "GPU Heatsink",
+    "TG0h": "GPU Heatsink",
     "TG0P": "GPU Proximity",
-    "TG1H": "GPU Heatsink (2)",
+    "TG0p": "GPU Proximity",
+    "TG1H": "GPU Heatsink 2",
+    # Heatsinks
     "Th0H": "Main Heatsink 1",
     "Th1H": "Main Heatsink 2",
     "Th2H": "Main Heatsink 3",
+    "TH0O": "Heatsink Outlet 1",
+    "TH1O": "Heatsink Outlet 2",
+    # Storage
     "TH0P": "Hard Drive",
     "TH1P": "Hard Drive Bay 2",
     "THSP": "Hard Drive Proximity",
+    "TO0P": "Optical Drive",
+    # LCD
     "TL0P": "LCD Panel",
     "TL1P": "LCD Proximity",
+    "TL0V": "LCD Backlight Sensor 1",
+    "TL1V": "LCD Backlight Sensor 2",
+    "TL2V": "LCD Backlight Sensor 3",
+    "TL0p": "LCD Panel 2",
+    "TL1p": "LCD Panel 3",
+    "TLAV": "LCD Ambient",
+    # Memory
     "TM0P": "Memory Proximity",
     "TM0S": "Memory Slot",
     "Tm0P": "Memory Bank",
+    # Northbridge / PCH
     "TN0D": "Northbridge Die",
     "TN0H": "Northbridge Heatsink",
     "TN0P": "Northbridge Proximity",
-    "TO0P": "Optical Drive",
+    "TS0D": "PCH Die",
+    "TS0P": "PCH Proximity",
+    # Power
     "TP0P": "Power Supply",
     "Tp0C": "Power Supply 1",
     "Tp1C": "Power Supply 2",
-    "TS0D": "PCH Die",
-    "TS0P": "PCH Proximity",
+    # Misc
     "TW0P": "Wireless Proximity",
     "TB0T": "Battery",
     "TB1T": "Battery Cell 1",
@@ -189,6 +261,10 @@ def friendly_temp_name(code):
     """Map a raw SMC code like 'TC0D' to a friendly name; fall back to the code."""
     if code in _TEMP_NAME_MAP:
         return _TEMP_NAME_MAP[code]
+    # Case-insensitive retry - some SMCs use lowercase 'c' / 'd' / 'p'.
+    ci = next((v for k, v in _TEMP_NAME_MAP.items() if k.lower() == code.lower()), None)
+    if ci:
+        return ci
     # Heuristic fallback for unknown codes: pick a readable prefix
     if len(code) == 4 and code[0] in "Tt":
         zone = code[1]
@@ -204,7 +280,8 @@ def friendly_temp_name(code):
                       "C": "Core", "S": "Slot", "T": "Temp"}
         base = zone_map.get(zone, f"Sensor {zone}")
         tail = suffix_map.get(suffix, "")
-        return f"{base} {tail}".strip() + f" ({code})"
+        friendly = f"{base} {tail}".strip()
+        return friendly or code
     return code
 
 
@@ -537,6 +614,12 @@ class FanControlApp:
             font=("Helvetica", 10, "bold"), anchor="w",
         )
         name_lbl.pack(side="left")
+        code_lbl = tk.Label(
+            header, text=f"({fan['code']})",
+            bg=self.theme["panel"], fg=self.theme["panel_dark"],
+            font=("Courier", 8),
+        )
+        code_lbl.pack(side="left", padx=(4, 0))
 
         mode_lbl = tk.Label(
             header, text="AUTO",
@@ -604,11 +687,12 @@ class FanControlApp:
         row.pack(fill="x", padx=4, pady=2)
         name = tk.Label(
             row, text=label, bg=self.theme["panel"], fg=self.theme["fg"],
-            font=("Helvetica", 9), anchor="w", width=20,
+            font=("Helvetica", 9), anchor="w", width=22,
         )
         name.pack(side="left")
         code = tk.Label(
-            row, text=raw_code, bg=self.theme["panel"], fg=self.theme["panel_dark"],
+            row, text=f"({raw_code})",
+            bg=self.theme["panel"], fg=self.theme["panel_dark"],
             font=("Courier", 8), anchor="w",
         )
         code.pack(side="left", padx=(4, 0))
@@ -709,7 +793,7 @@ class FanControlApp:
             widgets = self.temp_widgets.get(path)
             if not widgets:
                 continue
-            if t is None:
+            if not is_plausible_temp(t):
                 self.root.after(0, widgets["value"].set_value, "-- C", False)
             else:
                 warn = t >= 80
