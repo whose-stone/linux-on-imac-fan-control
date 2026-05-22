@@ -55,15 +55,31 @@ def read_file(path, default=None):
         return default
 
 
+# Sysfs roots we are ever allowed to write to.  write_file() refuses
+# anything outside these, so a future bug can't turn it into an
+# arbitrary-write-as-root primitive.
+_WRITABLE_PREFIXES = (
+    "/sys/devices/platform/applesmc.",
+    "/sys/class/hwmon/",
+)
+
+# Absolute paths only - never resolve privilege helpers via $PATH, which
+# the invoking user could point at a malicious binary.
+_PRIV_HELPERS = ("/usr/bin/pkexec", "/usr/bin/sudo")
+
+
 def write_file(path, value):
-    """Try writing directly; fall back to sudo/pkexec via tee."""
+    """Try writing directly; fall back to pkexec/sudo via tee."""
+    real = os.path.realpath(path)
+    if not real.startswith(_WRITABLE_PREFIXES):
+        return False, f"Refusing to write outside applesmc sysfs: {real}"
     try:
         with open(path, "w") as f:
             f.write(str(value))
         return True, None
     except PermissionError:
-        for helper in ("pkexec", "sudo"):
-            if not _which(helper):
+        for helper in _PRIV_HELPERS:
+            if not os.access(helper, os.X_OK):
                 continue
             try:
                 subprocess.run(
@@ -79,13 +95,6 @@ def write_file(path, value):
         return False, "Permission denied (run as root or install pkexec/sudo)"
     except OSError as e:
         return False, str(e)
-
-
-def _which(cmd):
-    for d in os.environ.get("PATH", "").split(os.pathsep):
-        if os.path.isfile(os.path.join(d, cmd)) and os.access(os.path.join(d, cmd), os.X_OK):
-            return os.path.join(d, cmd)
-    return None
 
 
 def friendly_fan_name(raw_label, idx):
