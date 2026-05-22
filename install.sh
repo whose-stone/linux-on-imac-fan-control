@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Installer for iMac Fan Control on Debian-based systems (ParrotOS, Kali,
-# Debian, Ubuntu, Linux Mint).  Installs the script, a polkit rule that lets
-# normal users write to applesmc fan files, and a .desktop launcher.
+# Debian, Ubuntu, Linux Mint).  Installs the script, an icon, and a
+# .desktop launcher that elevates via pkexec (PolicyKit's default
+# org.freedesktop.policykit.exec action, which requires admin auth).
 #
 # Usage:   sudo ./install.sh
 # Remove:  sudo ./install.sh --uninstall
@@ -114,10 +115,6 @@ EOF
 
     if [[ -f "$SRC_DIR/imac-fan-control.desktop" ]]; then
         install -m 0644 "$SRC_DIR/imac-fan-control.desktop" "$DESKTOP_PATH"
-    fi
-
-    if [[ -f "$SRC_DIR/org.imacfan.policy" ]]; then
-        install -m 0644 "$SRC_DIR/org.imacfan.policy" "$POLKIT_PATH"
     fi
 }
 
